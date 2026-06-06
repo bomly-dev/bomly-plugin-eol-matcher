@@ -18,10 +18,7 @@
     "aliases": [
       "eol"
     ],
-    "enabled": false,
-    "origin": "external",
-    "priority": 80,
-    "capabilities": [
+    "tags": [
       "lifecycle-enrichment",
       "http",
       "cache"
