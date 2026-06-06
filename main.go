@@ -55,7 +55,7 @@ func (m *matcher) Metadata(context.Context) (*sdk.PluginMetadata, error) {
 		Kind:             sdk.PluginKindMatcher,
 		PluginAPIVersion: sdk.PluginAPIVersion,
 		Description:      "External matcher plugin that enriches packages with endoflife.date lifecycle metadata.",
-		Homepage:         "https://github.com/bomly-dev/bomly-plugin-eol-lifecycle",
+		Homepage:         "https://github.com/bomly-dev/bomly-plugin-eol-matcher",
 		License:          "Apache-2.0",
 	}, nil
 }

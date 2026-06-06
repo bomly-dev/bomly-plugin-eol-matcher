@@ -6,13 +6,13 @@ External Bomly matcher plugin for [endoflife.date](https://endoflife.date) lifec
 
 ```bash
 go test ./...
-go build -o bin/bomly-plugin-eol-lifecycle .
+go build -o bin/bomly-plugin-eol-matcher .
 ```
 
 ## Install for local development
 
 ```bash
-bomly plugin install ./bin/bomly-plugin-eol-lifecycle --dev
+bomly plugin install ./bin/bomly-plugin-eol-matcher --dev
 bomly plugin enable eol-lifecycle-matcher
 bomly scan --enrich --matchers +eol
 ```
@@ -20,14 +20,14 @@ bomly scan --enrich --matchers +eol
 ## Install from an archive
 
 ```bash
-bomly plugin install ./dist/bomly-plugin-eol-lifecycle_linux_amd64.tar.gz
+bomly plugin install ./dist/bomly-plugin-eol-matcher_linux_amd64.tar.gz
 bomly plugin enable eol-lifecycle-matcher
 ```
 
 Direct URL installs require a checksum unless you explicitly opt out:
 
 ```bash
-bomly plugin install https://example.internal/bomly-plugin-eol-lifecycle_linux_amd64.tar.gz \
+bomly plugin install https://example.internal/bomly-plugin-eol-matcher_linux_amd64.tar.gz \
   --checksum sha256:<digest>
 ```
 
@@ -35,7 +35,7 @@ bomly plugin install https://example.internal/bomly-plugin-eol-lifecycle_linux_a
 
 ```bash
 export BOMLY_GITHUB_TOKEN=<token-with-release-access>
-bomly plugin install github:bomly-dev/bomly-plugin-eol-lifecycle@v0.1.0
+bomly plugin install github:bomly-dev/bomly-plugin-eol-matcher@v0.1.0
 bomly plugin enable eol-lifecycle-matcher
 ```
 

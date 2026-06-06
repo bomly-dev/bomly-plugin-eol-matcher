@@ -1,4 +1,4 @@
-module github.com/bomly-dev/bomly-plugin-eol-lifecycle
+module github.com/bomly-dev/bomly-plugin-eol-matcher
 
 go 1.26.3
 

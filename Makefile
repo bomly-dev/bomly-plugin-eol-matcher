@@ -1,4 +1,4 @@
-BINARY ?= bomly-plugin-eol-lifecycle
+BINARY ?= bomly-plugin-eol-matcher
 
 .PHONY: test build
 
