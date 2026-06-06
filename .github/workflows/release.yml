@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  BINARY: bomly-plugin-eol-lifecycle
+  BINARY: bomly-plugin-eol-matcher
 
 jobs:
   release:
