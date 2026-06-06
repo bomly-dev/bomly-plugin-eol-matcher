@@ -63,8 +63,8 @@ func TestMatchEnrichesPackageMetadata(t *testing.T) {
 	if got["cycle"] != "4.2" {
 		t.Fatalf("expected cycle 4.2, got %#v", got["cycle"])
 	}
-	if len(resp.MatcherRunDetails) != 1 || resp.MatcherRunDetails[0].MatchedPackages != 1 {
-		t.Fatalf("matcher run details = %#v", resp.MatcherRunDetails)
+	if resp.MatcherStats.Name != matcherName || resp.MatcherStats.MatchedPackages != 1 {
+		t.Fatalf("matcher stats = %#v", resp.MatcherStats)
 	}
 }
 

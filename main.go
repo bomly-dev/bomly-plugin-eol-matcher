@@ -87,7 +87,7 @@ func (m *matcher) Applicable(_ context.Context, req *sdk.MatchRequest) (*sdk.App
 
 func (m *matcher) Match(ctx context.Context, req *sdk.MatchRequest) (*sdk.MatchResponse, error) {
 	if req == nil || req.Registry == nil {
-		return matchResponse(nil, 0), nil
+		return matchResponse(nil, 0, 0), nil
 	}
 	cfg, err := loadConfig()
 	if err != nil {
@@ -102,24 +102,29 @@ func (m *matcher) Match(ctx context.Context, req *sdk.MatchRequest) (*sdk.MatchR
 
 	products, err := fetchProducts(ctx, client, cfg.APIBase, cache)
 	if err != nil {
-		return matchResponse(req.Registry, 0), err
+		return matchResponse(req.Registry, 0, len(req.Registry.All())), err
 	}
 
 	enrichedCount := 0
+	unmatchedCount := 0
 	for _, pkg := range req.Registry.All() {
 		if pkg == nil || strings.TrimSpace(pkg.Version) == "" {
+			unmatchedCount++
 			continue
 		}
 		product, ok := resolveProduct(pkg, products)
 		if !ok {
+			unmatchedCount++
 			continue
 		}
 		cycles, err := fetchCycles(ctx, client, cfg.APIBase, cache, product)
 		if err != nil {
+			unmatchedCount++
 			continue
 		}
 		entry := classifyEOL(product, strings.TrimSpace(pkg.Version), cycles, time.Now().UTC())
 		if entry == nil {
+			unmatchedCount++
 			continue
 		}
 		if pkg.Metadata == nil {
@@ -129,18 +134,18 @@ func (m *matcher) Match(ctx context.Context, req *sdk.MatchRequest) (*sdk.MatchR
 		pkg.Matched = true
 		enrichedCount++
 	}
-	return matchResponse(req.Registry, enrichedCount), nil
+	return matchResponse(req.Registry, enrichedCount, unmatchedCount), nil
 }
 
-func matchResponse(registry *sdk.PackageRegistry, matchedPackages int) *sdk.MatchResponse {
+func matchResponse(registry *sdk.PackageRegistry, matchedPackages, unmatchedPackages int) *sdk.MatchResponse {
 	return &sdk.MatchResponse{
-		Registry:    registry,
-		MatcherRuns: []string{matcherName},
-		MatcherRunDetails: []sdk.MatcherRun{{
-			Name:            matcherName,
-			DisplayName:     displayName,
-			MatchedPackages: matchedPackages,
-		}},
+		Registry: registry,
+		MatcherStats: sdk.MatcherStats{
+			Name:              matcherName,
+			DisplayName:       displayName,
+			MatchedPackages:   matchedPackages,
+			UnmatchedPackages: unmatchedPackages,
+		},
 	}
 }
 
