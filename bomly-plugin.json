@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "bomly.plugin.package.v1",
+  "id": "eol-lifecycle-matcher",
+  "name": "endoflife.date Lifecycle Matcher",
+  "version": "0.1.0",
+  "kind": "matcher",
+  "runtime": "hashicorp-grpc",
+  "pluginApiVersion": "bomly.plugin.v1",
+  "bomlyVersion": ">=0.1.0",
+  "entrypoint": {
+    "linux/amd64": "bin/bomly-plugin-eol-lifecycle",
+    "darwin/arm64": "bin/bomly-plugin-eol-lifecycle",
+    "windows/amd64": "bin/bomly-plugin-eol-lifecycle.exe"
+  },
+  "matcherDescriptor": {
+    "name": "eol-lifecycle-matcher",
+    "displayName": "endoflife.date Lifecycle Matcher",
+    "aliases": [
+      "eol"
+    ],
+    "enabled": false,
+    "origin": "external",
+    "priority": 80,
+    "capabilities": [
+      "lifecycle-enrichment",
+      "http",
+      "cache"
+    ]
+  },
+  "source": "github:bomly-dev/bomly-plugin-eol-lifecycle@v0.1.0",
+  "homepage": "https://github.com/bomly-dev/bomly-plugin-eol-lifecycle",
+  "license": "Apache-2.0",
+  "description": "External matcher plugin that enriches packages with endoflife.date lifecycle metadata."
+}
