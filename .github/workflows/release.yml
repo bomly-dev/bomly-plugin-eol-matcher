@@ -1,0 +1,235 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+env:
+  BINARY: bomly-plugin-eol-lifecycle
+
+jobs:
+  release:
+    if: ${{ !contains(github.event.head_commit.message || '', '[skip release]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Create release bot token
+        uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          client-id: ${{ vars.RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            ${{ github.event.repository.name }}
+            bomly-cli
+          permission-contents: write
+          permission-actions: write
+
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: true
+
+      - name: Check out Bomly CLI SDK dependency
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: gh repo clone bomly-dev/bomly-cli ../bomly-cli -- --depth 1
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: |
+            go.sum
+
+      - name: Validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          files="$(gofmt -l .)"
+          if [[ -n "${files}" ]]; then
+            echo "${files}"
+            exit 1
+          fi
+          python -m json.tool bomly-plugin.json >/dev/null
+          make test
+          go vet ./...
+          make build
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+
+      - name: Compute release version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+
+          head_tag="$(git tag --points-at HEAD --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1)"
+          if [[ -n "${head_tag}" ]]; then
+            echo "version=${head_tag#v}" >> "$GITHUB_OUTPUT"
+            echo "tag=${head_tag}" >> "$GITHUB_OUTPUT"
+            echo "create_tag=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          latest_tag="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1)"
+          if [[ -z "${latest_tag}" ]]; then
+            next="0.1.0"
+          else
+            current="${latest_tag#v}"
+            IFS=. read -r major minor patch <<< "${current}"
+            patch=$((patch + 1))
+            next="${major}.${minor}.${patch}"
+          fi
+
+          tag="v${next}"
+          if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+            echo "Tag ${tag} already exists" >&2
+            exit 1
+          fi
+
+          echo "version=${next}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "create_tag=true" >> "$GITHUB_OUTPUT"
+
+      - name: Update manifest version
+        if: steps.version.outputs.create_tag == 'true'
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path("bomly-plugin.json")
+          data = json.loads(path.read_text())
+          data["version"] = os.environ["VERSION"]
+          source = data.get("source", "")
+          if source.startswith("github:") and "@" in source:
+              data["source"] = source.rsplit("@", 1)[0] + "@" + os.environ["TAG"]
+          path.write_text(json.dumps(data, indent=2) + "\n")
+          PY
+          git diff -- bomly-plugin.json
+
+      - name: Commit version bump and tag
+        if: steps.version.outputs.create_tag == 'true'
+        shell: bash
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name "${{ steps.app-token.outputs.app-slug }}[bot]"
+          git config user.email "${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com"
+
+          if ! git diff --quiet -- bomly-plugin.json; then
+            git add bomly-plugin.json
+            git commit -m "chore(release): ${TAG} [skip ci] [skip release]"
+          fi
+
+          git tag -a "${TAG}" -m "Release ${TAG}"
+          git push origin HEAD:main
+          git push origin "${TAG}"
+
+      - name: Create release notes
+        shell: bash
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          cat > RELEASE_NOTES.md <<EOF
+          ${BINARY} ${TAG}
+
+          Assets include Bomly plugin archives for Linux, macOS, and Windows plus SHA256 checksums.
+          EOF
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if ! gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release create "${TAG}" \
+              --title "${BINARY} ${TAG}" \
+              --notes-file RELEASE_NOTES.md
+          fi
+
+      - name: Build plugin archives
+        shell: bash
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          repo_root="${PWD}"
+          mkdir -p dist
+
+          build_archive() {
+            local goos="$1"
+            local goarch="$2"
+            local ext=""
+            local archive_ext="tar.gz"
+            if [[ "${goos}" == "windows" ]]; then
+              ext=".exe"
+              archive_ext="zip"
+            fi
+
+            local stage_dir
+            stage_dir="$(mktemp -d)"
+            mkdir -p "${stage_dir}/bin"
+
+            GOOS="${goos}" GOARCH="${goarch}" CGO_ENABLED=0 go build \
+              -trimpath \
+              -ldflags "-s -w" \
+              -o "${stage_dir}/bin/${BINARY}${ext}" \
+              .
+
+            cp bomly-plugin.json README.md "${stage_dir}/"
+
+            local archive_path="dist/${BINARY}_${TAG}_${goos}_${goarch}.${archive_ext}"
+            if [[ "${archive_ext}" == "zip" ]]; then
+              (
+                cd "${stage_dir}"
+                zip -qr "${repo_root}/${archive_path}" bomly-plugin.json README.md bin
+              )
+            else
+              tar -C "${stage_dir}" -czf "${archive_path}" bomly-plugin.json README.md bin
+            fi
+
+            rm -rf "${stage_dir}"
+          }
+
+          build_archive linux amd64
+          build_archive darwin arm64
+          build_archive windows amd64
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          find dist -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) -print0 |
+            sort -z |
+            xargs -0 sha256sum > dist/SHA256SUMS
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: gh release upload "${TAG}" dist/* --clobber

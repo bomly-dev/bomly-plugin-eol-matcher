@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Create Bomly CLI dependency token
+        uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          client-id: ${{ vars.RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            bomly-cli
+          permission-contents: read
+
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Check out Bomly CLI SDK dependency
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: gh repo clone bomly-dev/bomly-cli ../bomly-cli -- --depth 1
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: |
+            go.sum
+
+      - name: Check Go formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          files="$(gofmt -l .)"
+          if [[ -n "${files}" ]]; then
+            echo "${files}"
+            exit 1
+          fi
+
+      - name: Validate plugin manifest
+        run: python -m json.tool bomly-plugin.json >/dev/null
+
+      - name: Run tests
+        run: make test
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Build plugin
+        run: make build
+
+      - name: Check module metadata drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
