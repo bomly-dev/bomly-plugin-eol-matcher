@@ -12,21 +12,6 @@
     "darwin/arm64": "bin/bomly-plugin-eol-matcher",
     "windows/amd64": "bin/bomly-plugin-eol-matcher.exe"
   },
-  "matcherDescriptor": {
-    "name": "eol-lifecycle-matcher",
-    "displayName": "endoflife.date Lifecycle Matcher",
-    "aliases": [
-      "eol"
-    ],
-    "enabled": false,
-    "origin": "external",
-    "priority": 80,
-    "capabilities": [
-      "lifecycle-enrichment",
-      "http",
-      "cache"
-    ]
-  },
   "source": "github:bomly-dev/bomly-plugin-eol-matcher@v0.1.0",
   "homepage": "https://github.com/bomly-dev/bomly-plugin-eol-matcher",
   "license": "Apache-2.0",
