@@ -28,7 +28,6 @@ const (
 	metadataEOLKey = "endoflife.date"
 	matcherName    = "eol-lifecycle-matcher"
 	displayName    = "endoflife.date Lifecycle Matcher"
-	pluginVersion  = "0.1.0"
 
 	defaultAPIBase  = "https://endoflife.date/api"
 	defaultCacheTTL = 24 * time.Hour
@@ -47,29 +46,12 @@ type config struct {
 	DisableCache bool   `json:"disable_cache"`
 }
 
-func (m *matcher) Metadata(context.Context) (*sdk.PluginMetadata, error) {
-	return &sdk.PluginMetadata{
-		ID:               matcherName,
-		Name:             displayName,
-		Version:          pluginVersion,
-		Kind:             sdk.PluginKindMatcher,
-		PluginAPIVersion: sdk.PluginAPIVersion,
-		Description:      "External matcher plugin that enriches packages with endoflife.date lifecycle metadata.",
-		Homepage:         "https://github.com/bomly-dev/bomly-plugin-eol-matcher",
-		License:          "Apache-2.0",
-	}, nil
-}
-
 func (m *matcher) Descriptor(context.Context) (*sdk.MatcherDescriptor, error) {
 	return &sdk.MatcherDescriptor{
-		Name:         matcherName,
-		DisplayName:  displayName,
-		Aliases:      []string{"eol"},
-		Enabled:      false,
-		Origin:       sdk.ExternalOrigin,
-		Priority:     80,
-		Required:     false,
-		Capabilities: []string{"lifecycle-enrichment", "http", "cache"},
+		Name:        matcherName,
+		DisplayName: displayName,
+		Aliases:     []string{"eol"},
+		Tags:        []string{"lifecycle-enrichment", "http", "cache"},
 	}, nil
 }
 
