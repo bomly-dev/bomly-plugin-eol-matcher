@@ -2,7 +2,7 @@
   "schemaVersion": "bomly.plugin.package.v1",
   "id": "eol-lifecycle-matcher",
   "name": "endoflife.date Lifecycle Matcher",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "kind": "matcher",
   "runtime": "hashicorp-grpc",
   "pluginApiVersion": "bomly.plugin.v1",
