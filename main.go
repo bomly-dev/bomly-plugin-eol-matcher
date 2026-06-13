@@ -297,7 +297,7 @@ func resolveProduct(pkg *sdk.Package, products map[string]struct{}) (string, boo
 	if pkg == nil || len(products) == 0 {
 		return "", false
 	}
-	eco := strings.ToLower(strings.TrimSpace(pkg.Ecosystem))
+	eco := strings.ToLower(strings.TrimSpace(string(pkg.Ecosystem)))
 	name := strings.ToLower(strings.TrimSpace(pkg.Name))
 	org := strings.ToLower(strings.TrimSpace(pkg.Org))
 
