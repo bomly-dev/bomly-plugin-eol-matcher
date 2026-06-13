@@ -39,10 +39,12 @@ func TestMatchEnrichesPackageMetadata(t *testing.T) {
 
 	registry := sdk.NewPackageRegistry()
 	registry.Add(&sdk.Package{
-		PURL:      "pkg:pypi/django@4.2.9",
-		Name:      "django",
-		Version:   "4.2.9",
-		Ecosystem: "python",
+		Coordinates: sdk.Coordinates{
+			PURL:      "pkg:pypi/django@4.2.9",
+			Name:      "django",
+			Version:   "4.2.9",
+			Ecosystem: sdk.EcosystemPython,
+		},
 	})
 	resp, err := (&matcher{}).Match(context.Background(), &sdk.MatchRequest{Registry: registry})
 	if err != nil {
