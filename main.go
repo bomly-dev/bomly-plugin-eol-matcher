@@ -52,6 +52,16 @@ func (m *matcher) Descriptor(context.Context) (*sdk.MatcherDescriptor, error) {
 		DisplayName: displayName,
 		Aliases:     []string{"eol"},
 		Tags:        []string{"lifecycle-enrichment", "http", "cache"},
+		// SupportedEcosystems is deliberately unset, which Bomly reads as
+		// "every ecosystem" — the accurate answer here. resolveProduct looks
+		// package names up against the live endoflife.date catalogue and has a
+		// catch-all branch, so what this matcher can answer depends on that
+		// catalogue rather than on the ecosystem. npm, Python, Go, and Maven
+		// only get tuned name handling on top.
+		//
+		// Declaring a list would suppress real hits: an apk, dpkg, rpm, or
+		// Homebrew package named nginx, postgresql, redis, or openssl resolves
+		// through the catch-all today.
 	}, nil
 }
 
