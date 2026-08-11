@@ -1,16 +1,46 @@
-package main
+package plugin
 
 import (
 	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
-	"github.com/bomly-dev/bomly-sdk"
+	sdk "github.com/bomly-dev/bomly-sdk"
+	"github.com/bomly-dev/bomly-sdk/conformance"
+	"go.uber.org/zap"
 )
+
+// testHost is a minimal HostContext for unit tests.
+type testHost struct {
+	config json.RawMessage
+}
+
+func (h testHost) Logger() *zap.Logger                 { return zap.NewNop() }
+func (h testHost) HTTPClient() *sdk.HTTPClientProvider { return nil }
+func (h testHost) Runtime() sdk.RuntimeInfo {
+	return sdk.RuntimeInfo{Execution: sdk.ExecutionEmbedded}
+}
+
+func (h testHost) DecodeConfig(v any) error {
+	payload := h.config
+	if len(payload) == 0 {
+		payload = json.RawMessage("{}")
+	}
+	return json.Unmarshal(payload, v)
+}
+
+func newMatcher(t *testing.T, config json.RawMessage) sdk.Matcher {
+	t.Helper()
+	matcher, err := Module().Matcher.New(context.Background(), testHost{config: config})
+	if err != nil {
+		t.Fatalf("construct matcher: %v", err)
+	}
+	return matcher
+}
 
 func TestMatchEnrichesPackageMetadata(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -29,13 +59,8 @@ func TestMatchEnrichesPackageMetadata(t *testing.T) {
 	}))
 	defer server.Close()
 
-	configDir := t.TempDir()
-	configPath := filepath.Join(configDir, "plugin.json")
-	cfg := `{"api_base":"` + server.URL + `/api","cache_dir":"` + filepath.ToSlash(filepath.Join(configDir, "cache")) + `"}`
-	if err := os.WriteFile(configPath, []byte(cfg), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-	t.Setenv(sdk.EnvPluginConfigFile, configPath)
+	cfg := `{"api_base":"` + server.URL + `/api","cache_dir":"` + filepath.ToSlash(filepath.Join(t.TempDir(), "cache")) + `"}`
+	matcher := newMatcher(t, json.RawMessage(cfg))
 
 	registry := sdk.NewPackageRegistry()
 	registry.Add(&sdk.Package{
@@ -46,7 +71,7 @@ func TestMatchEnrichesPackageMetadata(t *testing.T) {
 			Ecosystem: sdk.EcosystemPython,
 		},
 	})
-	resp, err := (&matcher{}).Match(context.Background(), &sdk.MatchRequest{Registry: registry})
+	resp, err := matcher.Match(context.Background(), sdk.MatchRequest{Registry: registry})
 	if err != nil {
 		t.Fatalf("Match() error = %v", err)
 	}
@@ -65,7 +90,7 @@ func TestMatchEnrichesPackageMetadata(t *testing.T) {
 	if got["cycle"] != "4.2" {
 		t.Fatalf("expected cycle 4.2, got %#v", got["cycle"])
 	}
-	if resp.MatcherStats.Name != matcherName || resp.MatcherStats.MatchedPackages != 1 {
+	if resp.MatcherStats.Name != Name || resp.MatcherStats.MatchedPackages != 1 {
 		t.Fatalf("matcher stats = %#v", resp.MatcherStats)
 	}
 }
@@ -102,14 +127,25 @@ func TestMatchCycleFallback(t *testing.T) {
 	}
 }
 
+// A config block that does not decode must surface through Ready as the
+// not-ready reason instead of failing construction, so the host can report
+// it (the ReadyResponse.Reason contract from the legacy serving style).
+func TestInvalidConfigSurfacesThroughReady(t *testing.T) {
+	matcher := newMatcher(t, json.RawMessage(`{"api_base":42}`))
+	err := matcher.Ready(context.Background(), sdk.MatchRequest{})
+	if err == nil {
+		t.Fatal("expected Ready to report the invalid configuration")
+	}
+	if _, matchErr := matcher.Match(context.Background(), sdk.MatchRequest{Registry: sdk.NewPackageRegistry()}); matchErr == nil {
+		t.Fatal("expected Match to refuse to run with an invalid configuration")
+	}
+}
+
 // The descriptor's ConfigSchema is generated from the config struct, so a
 // renamed or retyped field would silently change the advertised schema. Pin
 // the property names and types the plugin actually decodes.
 func TestDescriptorConfigSchema(t *testing.T) {
-	descriptor, err := (&matcher{}).Descriptor(context.Background())
-	if err != nil {
-		t.Fatalf("Descriptor: %v", err)
-	}
+	descriptor := Module().Matcher.Descriptor
 	if len(descriptor.ConfigSchema) == 0 {
 		t.Fatal("descriptor ConfigSchema is empty")
 	}
@@ -149,4 +185,31 @@ func TestDescriptorConfigSchema(t *testing.T) {
 			t.Errorf("property %q has type %#v, want %q", name, property["type"], wantType)
 		}
 	}
+}
+
+// TestConformance runs the SDK conformance suite against the module,
+// including the bomly-plugin.json identity cross-check.
+func TestConformance(t *testing.T) {
+	conformance.Test(t, conformance.Config{
+		Module:       Module(),
+		ManifestPath: filepath.Join("..", "bomly-plugin.json"),
+		SampleConfig: json.RawMessage(`{"api_base":"https://endoflife.date/api","cache_ttl":"12h","timeout":"10s","disable_cache":true}`),
+	})
+}
+
+// TestProbeBinary builds the real plugin binary and probes it over the
+// managed HashiCorp gRPC transport, asserting the served descriptor equals
+// the in-process one.
+func TestProbeBinary(t *testing.T) {
+	goBinary, err := exec.LookPath("go")
+	if err != nil {
+		t.Skip("go toolchain not available; skipping managed-transport probe")
+	}
+	binaryPath := filepath.Join(t.TempDir(), "bomly-plugin-eol-matcher")
+	build := exec.Command(goBinary, "build", "-o", binaryPath, "./cmd/bomly-plugin-eol-matcher")
+	build.Dir = ".."
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build plugin binary: %v\n%s", err, output)
+	}
+	conformance.ProbeBinary(t, binaryPath, conformance.WithModule(Module()))
 }
