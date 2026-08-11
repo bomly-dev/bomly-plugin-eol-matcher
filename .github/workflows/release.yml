@@ -199,7 +199,7 @@ jobs:
               -trimpath \
               -ldflags "-s -w" \
               -o "${stage_dir}/bin/${BINARY}${ext}" \
-              .
+              "./cmd/${BINARY}"
 
             cp bomly-plugin.json README.md "${stage_dir}/"
 

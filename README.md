@@ -6,7 +6,7 @@ External Bomly matcher plugin for [endoflife.date](https://endoflife.date) lifec
 
 ```bash
 go test ./...
-go build -o bin/bomly-plugin-eol-matcher .
+go build -o bin/bomly-plugin-eol-matcher ./cmd/bomly-plugin-eol-matcher
 ```
 
 ## Install for local development

@@ -1,4 +1,8 @@
-package main
+// Package plugin implements the endoflife.date lifecycle matcher: a Bomly
+// MATCHER that annotates packages with product lifecycle status
+// (supported, security-only, approaching-eol, end-of-life) resolved against
+// the endoflife.date catalogue.
+package plugin
 
 import (
 	"context"
@@ -26,7 +30,6 @@ const (
 	statusUnknown        = "unknown"
 
 	metadataEOLKey = "endoflife.date"
-	matcherName    = "eol-lifecycle-matcher"
 	displayName    = "endoflife.date Lifecycle Matcher"
 
 	defaultAPIBase  = "https://endoflife.date/api"
@@ -36,7 +39,19 @@ const (
 	approachingWindowDays = 180
 )
 
-type matcher struct{}
+// Name is the plugin's identity. It MUST equal the "id" field in
+// bomly-plugin.json — Bomly refuses to load a plugin whose manifest id and
+// runtime descriptor name disagree.
+const Name = "eol-lifecycle-matcher"
+
+// Matcher is the component. Configuration is decoded once at construction
+// through the HostContext; a decode failure is remembered and surfaced
+// through Ready so the host can report the reason instead of hard-failing.
+type Matcher struct {
+	config    config
+	configErr error
+	http      *sdk.HTTPClientProvider
+}
 
 type config struct {
 	APIBase      string `json:"api_base"`
@@ -46,9 +61,10 @@ type config struct {
 	DisableCache bool   `json:"disable_cache"`
 }
 
-func (m *matcher) Descriptor(context.Context) (*sdk.MatcherDescriptor, error) {
-	return &sdk.MatcherDescriptor{
-		Name:         matcherName,
+// descriptor is the matcher's static registration data.
+func descriptor() sdk.MatcherDescriptor {
+	return sdk.MatcherDescriptor{
+		Name:         Name,
 		DisplayName:  displayName,
 		Aliases:      []string{"eol"},
 		Tags:         []string{"lifecycle-enrichment", "http", "cache"},
@@ -63,32 +79,39 @@ func (m *matcher) Descriptor(context.Context) (*sdk.MatcherDescriptor, error) {
 		// Declaring a list would suppress real hits: an apk, dpkg, rpm, or
 		// Homebrew package named nginx, postgresql, redis, or openssl resolves
 		// through the catch-all today.
-	}, nil
-}
-
-func (m *matcher) Ready(context.Context, *sdk.MatchRequest) (*sdk.ReadyResponse, error) {
-	if _, err := loadConfig(); err != nil {
-		return &sdk.ReadyResponse{Reason: "invalid eol matcher configuration: " + err.Error()}, nil
 	}
-	return &sdk.ReadyResponse{Ready: true}, nil
 }
 
-func (m *matcher) Applicable(_ context.Context, req *sdk.MatchRequest) (*sdk.ApplicableResponse, error) {
-	return &sdk.ApplicableResponse{Applicable: req != nil && req.Registry != nil}, nil
+// Descriptor identifies the matcher to Bomly.
+func (m *Matcher) Descriptor() sdk.MatcherDescriptor { return descriptor() }
+
+// Ready reports whether the matcher can run; an invalid configuration is
+// reported as the not-ready reason rather than a construction failure.
+func (m *Matcher) Ready(context.Context, sdk.MatchRequest) error {
+	if m.configErr != nil {
+		return fmt.Errorf("invalid eol matcher configuration: %w", m.configErr)
+	}
+	return nil
 }
 
-func (m *matcher) Match(ctx context.Context, req *sdk.MatchRequest) (*sdk.MatchResponse, error) {
-	if req == nil || req.Registry == nil {
+// Applicable reports whether the request carries a package registry to enrich.
+func (m *Matcher) Applicable(_ context.Context, req sdk.MatchRequest) (bool, error) {
+	return req.Registry != nil, nil
+}
+
+// Match annotates registry packages with endoflife.date lifecycle metadata.
+func (m *Matcher) Match(ctx context.Context, req sdk.MatchRequest) (sdk.MatchResult, error) {
+	if req.Registry == nil {
 		return matchResponse(nil, 0, 0), nil
 	}
-	cfg, err := loadConfig()
-	if err != nil {
-		return nil, err
+	if m.configErr != nil {
+		return sdk.MatchResult{}, fmt.Errorf("invalid eol matcher configuration: %w", m.configErr)
 	}
+	cfg := m.config
 	timeout := parseDurationOrDefault(cfg.Timeout, defaultTimeout)
-	client, err := httpClient(timeout)
+	client, err := m.httpClient(timeout)
 	if err != nil {
-		return nil, err
+		return sdk.MatchResult{}, err
 	}
 	cache := newFileCache(cfg.CacheDir, cfg.CacheTTL, cfg.DisableCache)
 
@@ -129,11 +152,11 @@ func (m *matcher) Match(ctx context.Context, req *sdk.MatchRequest) (*sdk.MatchR
 	return matchResponse(req.Registry, enrichedCount, unmatchedCount), nil
 }
 
-func matchResponse(registry *sdk.PackageRegistry, matchedPackages, unmatchedPackages int) *sdk.MatchResponse {
-	return &sdk.MatchResponse{
+func matchResponse(registry *sdk.PackageRegistry, matchedPackages, unmatchedPackages int) sdk.MatchResult {
+	return sdk.MatchResult{
 		Registry: registry,
 		MatcherStats: sdk.MatcherStats{
-			Name:              matcherName,
+			Name:              Name,
 			DisplayName:       displayName,
 			MatchedPackages:   matchedPackages,
 			UnmatchedPackages: unmatchedPackages,
@@ -141,14 +164,14 @@ func matchResponse(registry *sdk.PackageRegistry, matchedPackages, unmatchedPack
 	}
 }
 
-func loadConfig() (config, error) {
+func loadConfig(host sdk.HostContext) (config, error) {
 	cfg := config{
 		APIBase:  defaultAPIBase,
 		CacheDir: defaultCacheDir(),
 		CacheTTL: defaultCacheTTL.String(),
 		Timeout:  defaultTimeout.String(),
 	}
-	if err := sdk.DecodePluginConfigFromEnv(&cfg); err != nil {
+	if err := host.DecodeConfig(&cfg); err != nil {
 		return config{}, err
 	}
 	if strings.TrimSpace(cfg.APIBase) == "" {
@@ -174,10 +197,14 @@ func defaultCacheDir() string {
 	return filepath.Join(home, ".bomly", "cache", "eol")
 }
 
-func httpClient(timeout time.Duration) (*http.Client, error) {
-	provider, err := sdk.NewHTTPClientProviderFromEnv()
-	if err != nil {
-		return nil, err
+func (m *Matcher) httpClient(timeout time.Duration) (*http.Client, error) {
+	provider := m.http
+	if provider == nil {
+		created, err := sdk.NewHTTPClientProvider(sdk.HTTPClientConfig{})
+		if err != nil {
+			return nil, err
+		}
+		provider = created
 	}
 	return provider.Client(timeout), nil
 }
@@ -188,6 +215,23 @@ func parseDurationOrDefault(value string, fallback time.Duration) time.Duration 
 		return fallback
 	}
 	return parsed
+}
+
+// Module packages the matcher for both execution modes: Bomly can embed it
+// in-process or serve it as a managed plugin subprocess (see
+// cmd/bomly-plugin-eol-matcher).
+func Module() sdk.Module {
+	return sdk.Module{
+		Kind: sdk.PluginKindMatcher,
+		Matcher: &sdk.MatcherModule{
+			Descriptor: descriptor(),
+			New: func(_ context.Context, host sdk.HostContext) (sdk.Matcher, error) {
+				matcher := &Matcher{http: host.HTTPClient()}
+				matcher.config, matcher.configErr = loadConfig(host)
+				return matcher, nil
+			},
+		},
+	}
 }
 
 func fetchProducts(ctx context.Context, client *http.Client, apiBase string, cache fileCache) (map[string]struct{}, error) {
@@ -512,8 +556,4 @@ func (c fileCache) set(key string, value any) error {
 func (c fileCache) path(key string) string {
 	sum := sha256.Sum256([]byte(key))
 	return filepath.Join(c.dir, hex.EncodeToString(sum[:])+".json")
-}
-
-func main() {
-	sdk.ServeMatcher(&matcher{})
 }
