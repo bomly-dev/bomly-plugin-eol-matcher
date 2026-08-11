@@ -33,7 +33,6 @@ jobs:
           owner: ${{ github.repository_owner }}
           repositories: |
             ${{ github.event.repository.name }}
-            bomly-cli
           permission-contents: write
           permission-actions: write
 
@@ -43,11 +42,6 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
           persist-credentials: true
-
-      - name: Check out Bomly CLI SDK dependency
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: gh repo clone bomly-dev/bomly-cli ../bomly-cli -- --depth 1
 
       - name: Set up Go
         uses: actions/setup-go@v6
