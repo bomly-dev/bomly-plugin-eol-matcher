@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bomly-dev/bomly-cli/sdk"
+	"github.com/bomly-dev/bomly-sdk"
 )
 
 const (
@@ -48,10 +48,11 @@ type config struct {
 
 func (m *matcher) Descriptor(context.Context) (*sdk.MatcherDescriptor, error) {
 	return &sdk.MatcherDescriptor{
-		Name:        matcherName,
-		DisplayName: displayName,
-		Aliases:     []string{"eol"},
-		Tags:        []string{"lifecycle-enrichment", "http", "cache"},
+		Name:         matcherName,
+		DisplayName:  displayName,
+		Aliases:      []string{"eol"},
+		Tags:         []string{"lifecycle-enrichment", "http", "cache"},
+		ConfigSchema: sdk.MustConfigSchemaFor(config{}),
 		// SupportedEcosystems is deliberately unset, which Bomly reads as
 		// "every ecosystem" — the accurate answer here. resolveProduct looks
 		// package names up against the live endoflife.date catalogue and has a
