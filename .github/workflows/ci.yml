@@ -18,24 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Create Bomly CLI dependency token
-        uses: actions/create-github-app-token@v3
-        id: app-token
-        with:
-          client-id: ${{ vars.RELEASE_BOT_CLIENT_ID }}
-          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: |
-            bomly-cli
-          permission-contents: read
-
       - name: Check out repository
         uses: actions/checkout@v5
-
-      - name: Check out Bomly CLI SDK dependency
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: gh repo clone bomly-dev/bomly-cli ../bomly-cli -- --depth 1
 
       - name: Set up Go
         uses: actions/setup-go@v6
