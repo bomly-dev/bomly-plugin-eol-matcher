@@ -3,10 +3,12 @@ package plugin
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	sdk "github.com/bomly-dev/bomly-sdk"
@@ -93,6 +95,126 @@ func TestMatchEnrichesPackageMetadata(t *testing.T) {
 	if resp.MatcherStats.Name != Name || resp.MatcherStats.MatchedPackages != 1 {
 		t.Fatalf("matcher stats = %#v", resp.MatcherStats)
 	}
+}
+
+// newEOLServer serves a small endoflife.date fixture: django is catalogued,
+// left-pad is not.
+func newEOLServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/all.json":
+			_ = json.NewEncoder(w).Encode([]string{"django"})
+		case "/api/django.json":
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"cycle":   "4.2",
+				"eol":     "2030-01-01",
+				"support": false,
+			}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+// newEOLRegistry builds a fresh registry fixture: one catalogued package and
+// one the matcher cannot resolve.
+func newEOLRegistry() *sdk.PackageRegistry {
+	registry := sdk.NewPackageRegistry()
+	registry.Add(&sdk.Package{
+		Coordinates: sdk.Coordinates{
+			PURL:      "pkg:pypi/django@4.2.9",
+			Name:      "django",
+			Version:   "4.2.9",
+			Ecosystem: sdk.EcosystemPython,
+		},
+	})
+	registry.Add(&sdk.Package{
+		Coordinates: sdk.Coordinates{
+			PURL:      "pkg:npm/left-pad@1.3.0",
+			Name:      "left-pad",
+			Version:   "1.3.0",
+			Ecosystem: sdk.EcosystemNPM,
+		},
+	})
+	return registry
+}
+
+// TestMatchDeltaEquivalence is the delta-protocol contract check: when the
+// request sets AcceptPackageUpdates, Match must leave the request registry
+// untouched and return deltas that — applied through the host's own merge,
+// sdk.ApplyPackageUpdates — reproduce the registry the legacy full-registry
+// path produces.
+func TestMatchDeltaEquivalence(t *testing.T) {
+	server := newEOLServer(t)
+	cfg := `{"api_base":"` + server.URL + `/api","disable_cache":true}`
+
+	legacy, err := newMatcher(t, json.RawMessage(cfg)).Match(context.Background(), sdk.MatchRequest{Registry: newEOLRegistry()})
+	if err != nil {
+		t.Fatalf("legacy Match() error = %v", err)
+	}
+
+	deltaRegistry := newEOLRegistry()
+	delta, err := newMatcher(t, json.RawMessage(cfg)).Match(context.Background(), sdk.MatchRequest{
+		Registry:             deltaRegistry,
+		AcceptPackageUpdates: true,
+	})
+	if err != nil {
+		t.Fatalf("delta Match() error = %v", err)
+	}
+
+	if delta.Registry != nil {
+		t.Fatal("delta path must not return a registry")
+	}
+	if len(delta.PackageUpdates) != 1 {
+		t.Fatalf("expected 1 package update, got %d", len(delta.PackageUpdates))
+	}
+	update := delta.PackageUpdates[0]
+	if update.PURL != "pkg:pypi/django@4.2.9" || !update.Matched {
+		t.Fatalf("unexpected update %#v", update)
+	}
+	if len(update.Licenses) != 0 || len(update.Vulnerabilities) != 0 {
+		t.Fatalf("update must carry only the mutated fields, got %#v", update)
+	}
+	if _, ok := update.Metadata[metadataEOLKey]; !ok {
+		t.Fatalf("update missing %q metadata, got %#v", metadataEOLKey, update.Metadata)
+	}
+
+	// The matcher must not have enriched the request registry in delta mode.
+	for _, pkg := range deltaRegistry.All() {
+		if pkg.Matched || pkg.Metadata != nil {
+			t.Fatalf("delta path mutated request registry package %#v", pkg)
+		}
+	}
+
+	merged := sdk.ApplyPackageUpdates(deltaRegistry, delta.PackageUpdates)
+	if diff := registryDiff(legacy.Registry, merged); diff != "" {
+		t.Fatalf("merged delta registry differs from legacy registry: %s", diff)
+	}
+	if legacy.MatcherStats != delta.MatcherStats {
+		t.Fatalf("matcher stats diverge: legacy %#v, delta %#v", legacy.MatcherStats, delta.MatcherStats)
+	}
+}
+
+// registryDiff deep-compares two registries package by package.
+func registryDiff(want, got *sdk.PackageRegistry) string {
+	wantPkgs := want.All()
+	gotPkgs := got.All()
+	if len(wantPkgs) != len(gotPkgs) {
+		return fmt.Sprintf("package count %d != %d", len(gotPkgs), len(wantPkgs))
+	}
+	for _, wantPkg := range wantPkgs {
+		gotPkg, ok := got.Get(wantPkg.PURL)
+		if !ok {
+			return fmt.Sprintf("missing package %s", wantPkg.PURL)
+		}
+		if !reflect.DeepEqual(wantPkg, gotPkg) {
+			return fmt.Sprintf("package %s differs: want %#v, got %#v", wantPkg.PURL, wantPkg, gotPkg)
+		}
+	}
+	return ""
 }
 
 func TestFetchProductsUsesCacheAfterFirstRequest(t *testing.T) {

@@ -69,6 +69,7 @@ func descriptor() sdk.MatcherDescriptor {
 		Aliases:      []string{"eol"},
 		Tags:         []string{"lifecycle-enrichment", "http", "cache"},
 		ConfigSchema: sdk.MustConfigSchemaFor(config{}),
+		Capabilities: []string{sdk.CapabilityPackageUpdates},
 		// SupportedEcosystems is deliberately unset, which Bomly reads as
 		// "every ecosystem" — the accurate answer here. resolveProduct looks
 		// package names up against the live endoflife.date catalogue and has a
@@ -100,12 +101,25 @@ func (m *Matcher) Applicable(_ context.Context, req sdk.MatchRequest) (bool, err
 }
 
 // Match annotates registry packages with endoflife.date lifecycle metadata.
+//
+// Two response shapes exist. Legacy hosts get the request registry back,
+// enriched in place (the protocol v1 baseline). When the request sets
+// AcceptPackageUpdates, the registry is left untouched and the result carries
+// PackageUpdates instead: one delta per enriched package holding only the
+// PURL, the lifecycle metadata entry, and Matched. The host merges deltas by
+// PURL; MergeFrom adds missing metadata keys and ORs Matched in, so applying
+// the deltas reproduces the in-place enrichment.
 func (m *Matcher) Match(ctx context.Context, req sdk.MatchRequest) (sdk.MatchResult, error) {
+	useDeltas := req.AcceptPackageUpdates
 	if req.Registry == nil {
-		return matchResponse(nil, 0, 0), nil
+		return matchResponse(nil, nil, useDeltas, 0, 0), nil
 	}
 	if m.configErr != nil {
 		return sdk.MatchResult{}, fmt.Errorf("invalid eol matcher configuration: %w", m.configErr)
+	}
+	packages := req.Registry.All()
+	if len(packages) == 0 {
+		return matchResponse(req.Registry, nil, useDeltas, 0, 0), nil
 	}
 	cfg := m.config
 	timeout := parseDurationOrDefault(cfg.Timeout, defaultTimeout)
@@ -117,12 +131,13 @@ func (m *Matcher) Match(ctx context.Context, req sdk.MatchRequest) (sdk.MatchRes
 
 	products, err := fetchProducts(ctx, client, cfg.APIBase, cache)
 	if err != nil {
-		return matchResponse(req.Registry, 0, len(req.Registry.All())), err
+		return matchResponse(req.Registry, nil, useDeltas, 0, len(packages)), err
 	}
 
 	enrichedCount := 0
 	unmatchedCount := 0
-	for _, pkg := range req.Registry.All() {
+	var updates []*sdk.Package
+	for _, pkg := range packages {
 		if pkg == nil || strings.TrimSpace(pkg.Version) == "" {
 			unmatchedCount++
 			continue
@@ -142,19 +157,33 @@ func (m *Matcher) Match(ctx context.Context, req sdk.MatchRequest) (sdk.MatchRes
 			unmatchedCount++
 			continue
 		}
-		if pkg.Metadata == nil {
-			pkg.Metadata = make(map[string]any, 1)
+		if useDeltas {
+			updates = append(updates, &sdk.Package{
+				Coordinates: sdk.Coordinates{PURL: pkg.PURL},
+				Matched:     true,
+				Metadata:    map[string]any{metadataEOLKey: entry},
+			})
+		} else {
+			if pkg.Metadata == nil {
+				pkg.Metadata = make(map[string]any, 1)
+			}
+			pkg.Metadata[metadataEOLKey] = entry
+			pkg.Matched = true
 		}
-		pkg.Metadata[metadataEOLKey] = entry
-		pkg.Matched = true
 		enrichedCount++
 	}
-	return matchResponse(req.Registry, enrichedCount, unmatchedCount), nil
+	return matchResponse(req.Registry, updates, useDeltas, enrichedCount, unmatchedCount), nil
 }
 
-func matchResponse(registry *sdk.PackageRegistry, matchedPackages, unmatchedPackages int) sdk.MatchResult {
+func matchResponse(registry *sdk.PackageRegistry, updates []*sdk.Package, useDeltas bool, matchedPackages, unmatchedPackages int) sdk.MatchResult {
+	if useDeltas {
+		registry = nil
+	} else {
+		updates = nil
+	}
 	return sdk.MatchResult{
-		Registry: registry,
+		Registry:       registry,
+		PackageUpdates: updates,
 		MatcherStats: sdk.MatcherStats{
 			Name:              Name,
 			DisplayName:       displayName,
