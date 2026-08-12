@@ -52,7 +52,7 @@ func TestMatchEnrichesPackageMetadata(t *testing.T) {
 		case "/api/django.json":
 			_ = json.NewEncoder(w).Encode([]map[string]any{{
 				"cycle":   "4.2",
-				"eol":     "2030-01-01",
+				"eol":     false,
 				"support": false,
 			}})
 		default:
@@ -108,7 +108,7 @@ func newEOLServer(t *testing.T) *httptest.Server {
 		case "/api/django.json":
 			_ = json.NewEncoder(w).Encode([]map[string]any{{
 				"cycle":   "4.2",
-				"eol":     "2030-01-01",
+				"eol":     false,
 				"support": false,
 			}})
 		default:

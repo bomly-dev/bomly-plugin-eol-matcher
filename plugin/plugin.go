@@ -256,6 +256,15 @@ func Module() sdk.Module {
 			Descriptor: descriptor(),
 			New: func(_ context.Context, host sdk.HostContext) (sdk.Matcher, error) {
 				matcher := &Matcher{http: host.HTTPClient()}
+				if matcher.http == nil {
+					// Create the fallback provider once so every Match call
+					// reuses one provider instead of building a new one.
+					created, err := sdk.NewHTTPClientProvider(sdk.HTTPClientConfig{})
+					if err != nil {
+						return nil, fmt.Errorf("create fallback HTTP client provider: %w", err)
+					}
+					matcher.http = created
+				}
 				matcher.config, matcher.configErr = loadConfig(host)
 				return matcher, nil
 			},
