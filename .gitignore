@@ -1,3 +1,8 @@
 /bin/
 /dist/
 /.bomly-cache/
+
+# The binary `go build -o bomly-plugin-eol-matcher ./cmd/...` produces at the repo root.
+# bin/ and dist/ were ignored; a bare root-level binary was not, and ~19MB of
+# build output reached main through the gap.
+/bomly-plugin-eol-matcher
