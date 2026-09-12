@@ -1,0 +1,41 @@
+# Dependabot version updates.
+# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# This repository is a bomly plugin: it compiles against github.com/bomly-dev/bomly-sdk
+# and is consumed by bomly-dev/bomly-cli as a pinned module. The release order is
+# SDK tags first, plugins adopt, then the CLI pins -- so a stale pin here stalls the
+# CLI behind it. That is not hypothetical: every plugin repository sat on an
+# superseded SDK release because no configuration file existed to raise the bump.
+#
+# Kept identical to bomly-cli's configuration on purpose. Per-repository drift in
+# how dependencies are tracked is the thing that makes a fleet of repositories
+# expensive.
+
+version: 2
+updates:
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      gomod-minor:
+        update-types:
+          - "minor"
+      gomod-patch:
+        update-types:
+          - "patch"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      github-actions-minor:
+        update-types:
+          - "minor"
+      github-actions-patch:
+        update-types:
+          - "patch"
