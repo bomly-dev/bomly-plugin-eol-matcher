@@ -11,9 +11,12 @@ import (
 	"reflect"
 	"testing"
 
-	sdk "github.com/bomly-dev/bomly-sdk"
 	"github.com/bomly-dev/bomly-sdk/conformance"
 	"go.uber.org/zap"
+
+	"github.com/bomly-dev/bomly-sdk/httpkit"
+	"github.com/bomly-dev/bomly-sdk/model"
+	sdkplugin "github.com/bomly-dev/bomly-sdk/plugin"
 )
 
 // testHost is a minimal HostContext for unit tests.
@@ -22,9 +25,9 @@ type testHost struct {
 }
 
 func (h testHost) Logger() *zap.Logger                 { return zap.NewNop() }
-func (h testHost) HTTPClient() *sdk.HTTPClientProvider { return nil }
-func (h testHost) Runtime() sdk.RuntimeInfo {
-	return sdk.RuntimeInfo{Execution: sdk.ExecutionEmbedded}
+func (h testHost) HTTPClient() *httpkit.ClientProvider { return nil }
+func (h testHost) Runtime() sdkplugin.RuntimeInfo {
+	return sdkplugin.RuntimeInfo{Execution: sdkplugin.ExecutionEmbedded}
 }
 
 func (h testHost) DecodeConfig(v any) error {
@@ -35,7 +38,7 @@ func (h testHost) DecodeConfig(v any) error {
 	return json.Unmarshal(payload, v)
 }
 
-func newMatcher(t *testing.T, config json.RawMessage) sdk.Matcher {
+func newMatcher(t *testing.T, config json.RawMessage) sdkplugin.Matcher {
 	t.Helper()
 	matcher, err := Module().Matcher.New(context.Background(), testHost{config: config})
 	if err != nil {
@@ -64,16 +67,16 @@ func TestMatchEnrichesPackageMetadata(t *testing.T) {
 	cfg := `{"api_base":"` + server.URL + `/api","cache_dir":"` + filepath.ToSlash(filepath.Join(t.TempDir(), "cache")) + `"}`
 	matcher := newMatcher(t, json.RawMessage(cfg))
 
-	registry := sdk.NewPackageRegistry()
-	registry.Add(&sdk.Package{
-		Coordinates: sdk.Coordinates{
+	registry := model.NewPackageRegistry()
+	registry.Add(&model.Package{
+		Coordinates: model.Coordinates{
 			PURL:      "pkg:pypi/django@4.2.9",
 			Name:      "django",
 			Version:   "4.2.9",
-			Ecosystem: sdk.EcosystemPython,
+			Ecosystem: model.EcosystemPython,
 		},
 	})
-	resp, err := matcher.Match(context.Background(), sdk.MatchRequest{Registry: registry})
+	resp, err := matcher.Match(context.Background(), sdkplugin.MatchRequest{Registry: registry})
 	if err != nil {
 		t.Fatalf("Match() error = %v", err)
 	}
@@ -121,22 +124,22 @@ func newEOLServer(t *testing.T) *httptest.Server {
 
 // newEOLRegistry builds a fresh registry fixture: one catalogued package and
 // one the matcher cannot resolve.
-func newEOLRegistry() *sdk.PackageRegistry {
-	registry := sdk.NewPackageRegistry()
-	registry.Add(&sdk.Package{
-		Coordinates: sdk.Coordinates{
+func newEOLRegistry() *model.PackageRegistry {
+	registry := model.NewPackageRegistry()
+	registry.Add(&model.Package{
+		Coordinates: model.Coordinates{
 			PURL:      "pkg:pypi/django@4.2.9",
 			Name:      "django",
 			Version:   "4.2.9",
-			Ecosystem: sdk.EcosystemPython,
+			Ecosystem: model.EcosystemPython,
 		},
 	})
-	registry.Add(&sdk.Package{
-		Coordinates: sdk.Coordinates{
+	registry.Add(&model.Package{
+		Coordinates: model.Coordinates{
 			PURL:      "pkg:npm/left-pad@1.3.0",
 			Name:      "left-pad",
 			Version:   "1.3.0",
-			Ecosystem: sdk.EcosystemNPM,
+			Ecosystem: model.EcosystemNPM,
 		},
 	})
 	return registry
@@ -151,13 +154,13 @@ func TestMatchDeltaEquivalence(t *testing.T) {
 	server := newEOLServer(t)
 	cfg := `{"api_base":"` + server.URL + `/api","disable_cache":true}`
 
-	legacy, err := newMatcher(t, json.RawMessage(cfg)).Match(context.Background(), sdk.MatchRequest{Registry: newEOLRegistry()})
+	legacy, err := newMatcher(t, json.RawMessage(cfg)).Match(context.Background(), sdkplugin.MatchRequest{Registry: newEOLRegistry()})
 	if err != nil {
 		t.Fatalf("legacy Match() error = %v", err)
 	}
 
 	deltaRegistry := newEOLRegistry()
-	delta, err := newMatcher(t, json.RawMessage(cfg)).Match(context.Background(), sdk.MatchRequest{
+	delta, err := newMatcher(t, json.RawMessage(cfg)).Match(context.Background(), sdkplugin.MatchRequest{
 		Registry:             deltaRegistry,
 		AcceptPackageUpdates: true,
 	})
@@ -189,7 +192,7 @@ func TestMatchDeltaEquivalence(t *testing.T) {
 		}
 	}
 
-	merged := sdk.ApplyPackageUpdates(deltaRegistry, delta.PackageUpdates)
+	merged := model.ApplyPackageUpdates(deltaRegistry, delta.PackageUpdates)
 	if diff := registryDiff(legacy.Registry, merged); diff != "" {
 		t.Fatalf("merged delta registry differs from legacy registry: %s", diff)
 	}
@@ -199,7 +202,7 @@ func TestMatchDeltaEquivalence(t *testing.T) {
 }
 
 // registryDiff deep-compares two registries package by package.
-func registryDiff(want, got *sdk.PackageRegistry) string {
+func registryDiff(want, got *model.PackageRegistry) string {
 	wantPkgs := want.All()
 	gotPkgs := got.All()
 	if len(wantPkgs) != len(gotPkgs) {
@@ -254,11 +257,11 @@ func TestMatchCycleFallback(t *testing.T) {
 // it (the ReadyResponse.Reason contract from the legacy serving style).
 func TestInvalidConfigSurfacesThroughReady(t *testing.T) {
 	matcher := newMatcher(t, json.RawMessage(`{"api_base":42}`))
-	err := matcher.Ready(context.Background(), sdk.MatchRequest{})
+	err := matcher.Ready(context.Background(), sdkplugin.MatchRequest{})
 	if err == nil {
 		t.Fatal("expected Ready to report the invalid configuration")
 	}
-	if _, matchErr := matcher.Match(context.Background(), sdk.MatchRequest{Registry: sdk.NewPackageRegistry()}); matchErr == nil {
+	if _, matchErr := matcher.Match(context.Background(), sdkplugin.MatchRequest{Registry: model.NewPackageRegistry()}); matchErr == nil {
 		t.Fatal("expected Match to refuse to run with an invalid configuration")
 	}
 }
