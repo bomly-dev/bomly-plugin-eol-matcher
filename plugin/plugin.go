@@ -19,7 +19,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bomly-dev/bomly-sdk"
+	"github.com/bomly-dev/bomly-sdk/httpkit"
+	"github.com/bomly-dev/bomly-sdk/model"
+	sdkplugin "github.com/bomly-dev/bomly-sdk/plugin"
 )
 
 const (
@@ -50,7 +52,7 @@ const Name = "eol-lifecycle-matcher"
 type Matcher struct {
 	config    config
 	configErr error
-	http      *sdk.HTTPClientProvider
+	http      *httpkit.ClientProvider
 }
 
 type config struct {
@@ -62,14 +64,14 @@ type config struct {
 }
 
 // descriptor is the matcher's static registration data.
-func descriptor() sdk.MatcherDescriptor {
-	return sdk.MatcherDescriptor{
+func descriptor() sdkplugin.MatcherDescriptor {
+	return sdkplugin.MatcherDescriptor{
 		Name:         Name,
 		DisplayName:  displayName,
 		Aliases:      []string{"eol"},
 		Tags:         []string{"lifecycle-enrichment", "http", "cache"},
-		ConfigSchema: sdk.MustConfigSchemaFor(config{}),
-		Capabilities: []string{sdk.CapabilityPackageUpdates},
+		ConfigSchema: sdkplugin.MustConfigSchemaFor(config{}),
+		Capabilities: []string{sdkplugin.CapabilityPackageUpdates},
 		// SupportedEcosystems is deliberately unset, which Bomly reads as
 		// "every ecosystem" — the accurate answer here. resolveProduct looks
 		// package names up against the live endoflife.date catalogue and has a
@@ -84,11 +86,11 @@ func descriptor() sdk.MatcherDescriptor {
 }
 
 // Descriptor identifies the matcher to Bomly.
-func (m *Matcher) Descriptor() sdk.MatcherDescriptor { return descriptor() }
+func (m *Matcher) Descriptor() sdkplugin.MatcherDescriptor { return descriptor() }
 
 // Ready reports whether the matcher can run; an invalid configuration is
 // reported as the not-ready reason rather than a construction failure.
-func (m *Matcher) Ready(context.Context, sdk.MatchRequest) error {
+func (m *Matcher) Ready(context.Context, sdkplugin.MatchRequest) error {
 	if m.configErr != nil {
 		return fmt.Errorf("invalid eol matcher configuration: %w", m.configErr)
 	}
@@ -96,7 +98,7 @@ func (m *Matcher) Ready(context.Context, sdk.MatchRequest) error {
 }
 
 // Applicable reports whether the request carries a package registry to enrich.
-func (m *Matcher) Applicable(_ context.Context, req sdk.MatchRequest) (bool, error) {
+func (m *Matcher) Applicable(_ context.Context, req sdkplugin.MatchRequest) (bool, error) {
 	return req.Registry != nil, nil
 }
 
@@ -109,13 +111,13 @@ func (m *Matcher) Applicable(_ context.Context, req sdk.MatchRequest) (bool, err
 // PURL, the lifecycle metadata entry, and Matched. The host merges deltas by
 // PURL; MergeFrom adds missing metadata keys and ORs Matched in, so applying
 // the deltas reproduces the in-place enrichment.
-func (m *Matcher) Match(ctx context.Context, req sdk.MatchRequest) (sdk.MatchResult, error) {
+func (m *Matcher) Match(ctx context.Context, req sdkplugin.MatchRequest) (sdkplugin.MatchResult, error) {
 	useDeltas := req.AcceptPackageUpdates
 	if req.Registry == nil {
 		return matchResponse(nil, nil, useDeltas, 0, 0), nil
 	}
 	if m.configErr != nil {
-		return sdk.MatchResult{}, fmt.Errorf("invalid eol matcher configuration: %w", m.configErr)
+		return sdkplugin.MatchResult{}, fmt.Errorf("invalid eol matcher configuration: %w", m.configErr)
 	}
 	packages := req.Registry.All()
 	if len(packages) == 0 {
@@ -125,7 +127,7 @@ func (m *Matcher) Match(ctx context.Context, req sdk.MatchRequest) (sdk.MatchRes
 	timeout := parseDurationOrDefault(cfg.Timeout, defaultTimeout)
 	client, err := m.httpClient(timeout)
 	if err != nil {
-		return sdk.MatchResult{}, err
+		return sdkplugin.MatchResult{}, err
 	}
 	cache := newFileCache(cfg.CacheDir, cfg.CacheTTL, cfg.DisableCache)
 
@@ -136,7 +138,7 @@ func (m *Matcher) Match(ctx context.Context, req sdk.MatchRequest) (sdk.MatchRes
 
 	enrichedCount := 0
 	unmatchedCount := 0
-	var updates []*sdk.Package
+	var updates []*model.Package
 	for _, pkg := range packages {
 		if pkg == nil || strings.TrimSpace(pkg.Version) == "" {
 			unmatchedCount++
@@ -158,8 +160,8 @@ func (m *Matcher) Match(ctx context.Context, req sdk.MatchRequest) (sdk.MatchRes
 			continue
 		}
 		if useDeltas {
-			updates = append(updates, &sdk.Package{
-				Coordinates: sdk.Coordinates{PURL: pkg.PURL},
+			updates = append(updates, &model.Package{
+				Coordinates: model.Coordinates{PURL: pkg.PURL},
 				Matched:     true,
 				Metadata:    map[string]any{metadataEOLKey: entry},
 			})
@@ -175,16 +177,16 @@ func (m *Matcher) Match(ctx context.Context, req sdk.MatchRequest) (sdk.MatchRes
 	return matchResponse(req.Registry, updates, useDeltas, enrichedCount, unmatchedCount), nil
 }
 
-func matchResponse(registry *sdk.PackageRegistry, updates []*sdk.Package, useDeltas bool, matchedPackages, unmatchedPackages int) sdk.MatchResult {
+func matchResponse(registry *model.PackageRegistry, updates []*model.Package, useDeltas bool, matchedPackages, unmatchedPackages int) sdkplugin.MatchResult {
 	if useDeltas {
 		registry = nil
 	} else {
 		updates = nil
 	}
-	return sdk.MatchResult{
+	return sdkplugin.MatchResult{
 		Registry:       registry,
 		PackageUpdates: updates,
-		MatcherStats: sdk.MatcherStats{
+		MatcherStats: sdkplugin.MatcherStats{
 			Name:              Name,
 			DisplayName:       displayName,
 			MatchedPackages:   matchedPackages,
@@ -193,7 +195,7 @@ func matchResponse(registry *sdk.PackageRegistry, updates []*sdk.Package, useDel
 	}
 }
 
-func loadConfig(host sdk.HostContext) (config, error) {
+func loadConfig(host sdkplugin.HostContext) (config, error) {
 	cfg := config{
 		APIBase:  defaultAPIBase,
 		CacheDir: defaultCacheDir(),
@@ -229,7 +231,7 @@ func defaultCacheDir() string {
 func (m *Matcher) httpClient(timeout time.Duration) (*http.Client, error) {
 	provider := m.http
 	if provider == nil {
-		created, err := sdk.NewHTTPClientProvider(sdk.HTTPClientConfig{})
+		created, err := httpkit.NewClientProvider(httpkit.ClientConfig{})
 		if err != nil {
 			return nil, err
 		}
@@ -249,17 +251,17 @@ func parseDurationOrDefault(value string, fallback time.Duration) time.Duration 
 // Module packages the matcher for both execution modes: Bomly can embed it
 // in-process or serve it as a managed plugin subprocess (see
 // cmd/bomly-plugin-eol-matcher).
-func Module() sdk.Module {
-	return sdk.Module{
-		Kind: sdk.PluginKindMatcher,
-		Matcher: &sdk.MatcherModule{
+func Module() sdkplugin.Module {
+	return sdkplugin.Module{
+		Kind: sdkplugin.PluginKindMatcher,
+		Matcher: &sdkplugin.MatcherModule{
 			Descriptor: descriptor(),
-			New: func(_ context.Context, host sdk.HostContext) (sdk.Matcher, error) {
+			New: func(_ context.Context, host sdkplugin.HostContext) (sdkplugin.Matcher, error) {
 				matcher := &Matcher{http: host.HTTPClient()}
 				if matcher.http == nil {
 					// Create the fallback provider once so every Match call
 					// reuses one provider instead of building a new one.
-					created, err := sdk.NewHTTPClientProvider(sdk.HTTPClientConfig{})
+					created, err := httpkit.NewClientProvider(httpkit.ClientConfig{})
 					if err != nil {
 						return nil, fmt.Errorf("create fallback HTTP client provider: %w", err)
 					}
@@ -385,7 +387,7 @@ func fetchCycles(ctx context.Context, client *http.Client, apiBase string, cache
 	return cycles, nil
 }
 
-func resolveProduct(pkg *sdk.Package, products map[string]struct{}) (string, bool) {
+func resolveProduct(pkg *model.Package, products map[string]struct{}) (string, bool) {
 	if pkg == nil || len(products) == 0 {
 		return "", false
 	}
