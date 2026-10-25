@@ -41,6 +41,18 @@ bomly plugin enable eol-lifecycle-matcher
 
 `GITHUB_TOKEN`, `GH_TOKEN`, and `GITHUB_AUTH_TOKEN` are also accepted by Bomly for private release metadata and asset downloads.
 
+## Access
+
+`bomly-plugin.json` declares what the matcher touches, which Bomly shows when you install it and in `bomly plugin info`. It is a disclosure, not a sandbox.
+
+| Access | Why |
+| --- | --- |
+| Reads and writes `home` | The response cache, `~/.bomly/cache/eol` by default |
+| Network `endoflife.date` | The lifecycle API the matcher queries |
+| Environment `HOME`, `USERPROFILE` | Locating the default cache directory (`os.UserHomeDir` reads `HOME`, or `USERPROFILE` on Windows) |
+
+Setting `cache_dir` or `api_base` moves the cache or the API to a place you chose; the declaration describes the defaults.
+
 ## Configuration
 
 Configure the plugin in Bomly's plugin config map:
