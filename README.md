@@ -49,7 +49,7 @@ bomly plugin enable eol-lifecycle-matcher
 | --- | --- |
 | Reads and writes `home` | The response cache, `~/.bomly/cache/eol` by default |
 | Network `endoflife.date` | The lifecycle API the matcher queries |
-| Environment `HOME` | Locating the default cache directory |
+| Environment `HOME`, `USERPROFILE` | Locating the default cache directory (`os.UserHomeDir` reads `HOME`, or `USERPROFILE` on Windows) |
 
 Setting `cache_dir` or `api_base` moves the cache or the API to a place you chose; the declaration describes the defaults.
 

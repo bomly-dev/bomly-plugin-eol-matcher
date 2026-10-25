@@ -27,7 +27,8 @@
       "endoflife.date"
     ],
     "environment": [
-      "HOME"
+      "HOME",
+      "USERPROFILE"
     ]
   }
 }
