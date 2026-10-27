@@ -51,7 +51,7 @@ bomly plugin enable eol-lifecycle-matcher
 | Network `endoflife.date` | The lifecycle API the matcher queries |
 | Environment `HOME`, `USERPROFILE` | Locating the default cache directory (`os.UserHomeDir` reads `HOME`, or `USERPROFILE` on Windows) |
 
-Setting `cache_dir` or `api_base` moves the cache or the API to a place you chose; the declaration describes the defaults. If Bomly cannot find your home directory, the matcher runs without a cache.
+Setting `cache_dir` or `api_base` moves the cache or the API to a place you chose; the declaration describes the defaults. If you leave `cache_dir` unset and Bomly cannot find your home directory, the matcher runs without a cache.
 
 ## Configuration
 
