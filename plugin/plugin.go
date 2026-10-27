@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bomly-dev/bomly-sdk/filecache"
 	"github.com/bomly-dev/bomly-sdk/httpkit"
 	"github.com/bomly-dev/bomly-sdk/model"
 	sdkplugin "github.com/bomly-dev/bomly-sdk/plugin"
@@ -220,12 +221,16 @@ func loadConfig(host sdkplugin.HostContext) (config, error) {
 	return cfg, nil
 }
 
+// defaultCacheDir returns ~/.bomly/cache/eol, or "" -- which runs the matcher
+// without a cache -- when there is no home directory. It never falls back to
+// a path relative to the working directory, which no access declaration
+// describes (bomly-planning#115).
 func defaultCacheDir() string {
-	home, err := os.UserHomeDir()
+	dir, err := filecache.DefaultDir("eol")
 	if err != nil {
-		return filepath.Join(".bomly-cache", "eol")
+		return ""
 	}
-	return filepath.Join(home, ".bomly", "cache", "eol")
+	return dir
 }
 
 func (m *Matcher) httpClient(timeout time.Duration) (*http.Client, error) {

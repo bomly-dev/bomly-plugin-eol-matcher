@@ -3,7 +3,7 @@ module github.com/bomly-dev/bomly-plugin-eol-matcher
 go 1.27.0
 
 require (
-	github.com/bomly-dev/bomly-sdk v0.16.0
+	github.com/bomly-dev/bomly-sdk v0.17.0
 	go.uber.org/zap v1.28.0
 )
 

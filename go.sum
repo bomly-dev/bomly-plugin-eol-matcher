@@ -4,8 +4,8 @@ github.com/aquasecurity/go-pep440-version v0.0.1 h1:8VKKQtH2aV61+0hovZS3T//rUF+6
 github.com/aquasecurity/go-pep440-version v0.0.1/go.mod h1:3naPe+Bp6wi3n4l5iBFCZgS0JG8vY6FT0H4NGhFJ+i4=
 github.com/aquasecurity/go-version v0.0.1 h1:4cNl516agK0TCn5F7mmYN+xVs1E3S45LkgZk3cbaW2E=
 github.com/aquasecurity/go-version v0.0.1/go.mod h1:s1UU6/v2hctXcOa3OLwfj5d9yoXHa3ahf+ipSwEvGT0=
-github.com/bomly-dev/bomly-sdk v0.16.0 h1:czCVZRiZ2TDGMRQwy1a6jxbS+/3ypoaMYcP0/i7Boo0=
-github.com/bomly-dev/bomly-sdk v0.16.0/go.mod h1:XzJZ6B9fNewalouISppzR52Fev4XGIDPElO9OjJTU5M=
+github.com/bomly-dev/bomly-sdk v0.17.0 h1:IJZVXJTYKcO6mIWCJZnTkaYhA2ufRH1EJ+Fhr3i0cXc=
+github.com/bomly-dev/bomly-sdk v0.17.0/go.mod h1:XzJZ6B9fNewalouISppzR52Fev4XGIDPElO9OjJTU5M=
 github.com/bradleyjkemp/cupaloy/v2 v2.8.0 h1:any4BmKE+jGIaMpnU8YgH/I2LPiLBufr6oMMlVBbn9M=
 github.com/bradleyjkemp/cupaloy/v2 v2.8.0/go.mod h1:bm7JXdkRd4BHJk9HpwqAI8BoAY1lps46Enkdqw6aRX0=
 github.com/bufbuild/protocompile v0.14.1 h1:iA73zAf/fyljNjQKwYzUHD6AD4R8KMasmwa/FBatYVw=
