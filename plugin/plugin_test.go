@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
@@ -339,4 +340,32 @@ func TestProbeBinary(t *testing.T) {
 		t.Fatalf("build plugin binary: %v\n%s", err, output)
 	}
 	conformance.ProbeBinary(t, binaryPath, conformance.WithModule(Module()))
+}
+
+// TestNoHomeDirectoryRunsWithoutACache is bomly-planning#115: with no home
+// directory the matcher has no default cache, and it writes nothing into the
+// directory it was started in.
+func TestNoHomeDirectoryRunsWithoutACache(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+	t.Setenv("home", "")
+	if dir := defaultCacheDir(); dir != "" {
+		t.Fatalf("defaultCacheDir() = %q with no home directory, want no cache", dir)
+	}
+	cwd := t.TempDir()
+	t.Chdir(cwd)
+	cfg, err := loadConfig(testHost{})
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	cache := newFileCache(cfg.CacheDir, cfg.CacheTTL, cfg.DisableCache)
+	if err := cache.set("products", []string{"go"}); err != nil {
+		t.Fatalf("set on the disabled cache: %v", err)
+	}
+	if _, ok := cache.getStrings("products"); ok {
+		t.Error("the disabled cache returned a value")
+	}
+	if entries, _ := os.ReadDir(cwd); len(entries) != 0 {
+		t.Errorf("the matcher wrote %d entries into the working directory", len(entries))
+	}
 }
